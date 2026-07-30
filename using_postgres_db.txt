@@ -1,0 +1,44 @@
+docker exec to-do-postgres psql -U username -d to_do -c 'SELECT * FROM to_do_items ORDER BY id;'
+
+After install, open pgAdmin from the app menu (or the web UI if you installed that), then register a server with:
+
+Field	Value
+Host name: Postgres
+Host: localhost
+Port: 5432
+Maintenance database: to_do
+Username: username
+Password: password
+Then: Servers → your server → Databases → to_do → Schemas → public → Tables → to_do_items → View/Edit Data → All Rows.
+
+Those credentials match your docker-compose/ingress/.env setup. Postgres must be running (docker compose up -d postgres from the project root).
+
+# stop the old process if needed
+pkill -f 'target/debug/ingress'
+cd ingress
+export $(cat .env | xargs)
+cargo run
+Then hard-refresh http://localhost:8001.
+
+pkill -f 'target/debug/ingress'
+cd ingress && export $(cat .env | xargs) && cargo run
+
+Frontend must be rebuilt + ingress recompiled
+Ingress embeds frontend/public at compile time (rust-embed). Editing LoginForm / index.tsx alone does nothing until:
+
+cd frontend && npm run build
+cd ../ingress && export $(cat .env | xargs) && cargo run
+Then hard-refresh (cache is 7 days).
+
+cd frontend && npm run build
+cd ../ingress && export $(cat .env | xargs) && cargo run
+
+TOKEN=$(curl -sS -u 'test@gmail.com:password' \
+  http://127.0.0.1:8001/api/v1/auth/login | tr -d '"')
+
+curl -X POST http://127.0.0.1:8001/api/v1/auth/logout \
+  -H "token: $TOKEN"
+  
+docker inspect to-do-postgres --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{end}}'
+
+set -a && source .env && set +a && cargo run

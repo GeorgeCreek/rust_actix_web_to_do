@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# File: ingress/scripts/run_server.sh
+
+# navigate to directory
+SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
+cd $SCRIPTPATH
+
+cd ../..
+cd frontend
+npm install
+# WASM must exist before esbuild can resolve rust-interface imports
+npm run wasm
+npm run build
+cd ../ingress
+# cargo clean
+export $(cat .env | xargs)
+cargo run
