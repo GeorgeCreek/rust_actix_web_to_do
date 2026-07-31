@@ -92,3 +92,77 @@ async fn json_file_delete_one(title: String, user_id: i32)
     Ok(to_do_item)
 }
 
+#[cfg(feature = "sqlx-postgres")]
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_sqlx_postgres_delete_one_ok() {
+        // Use unique titles so we never touch real app rows.
+        let title = format!(
+            "test_sqlx_postgres_delete_one_{}",
+            uuid::Uuid::new_v4()
+        );
+        let user_id = 1;
+        let item = sqlx::query_as::<_, ToDoItem>("
+            INSERT INTO to_do_items (title, status)
+            VALUES ($1, $2)
+            RETURNING *"
+        ).bind(&title)
+        .bind("PENDING")
+        .fetch_one(&*SQLX_POSTGRES_POOL).await.unwrap();
+
+        let _ = sqlx::query("
+            INSERT INTO user_connections (user_id, to_do_id)
+            VALUES ($1, $2)"
+        ).bind(user_id)
+        .bind(item.id)
+        .execute(&*SQLX_POSTGRES_POOL).await.unwrap();
+
+        let result = sqlx_postgres_delete_one(
+            title.clone(),
+            user_id
+        ).await.unwrap();
+        assert_eq!(result.title, title);
+
+        let result = sqlx::query_as::<_, ToDoItem>("
+            SELECT * FROM to_do_items
+            WHERE title = $1"
+        ).bind(&title)
+        .fetch_optional(&*SQLX_POSTGRES_POOL).await.unwrap();
+        assert!(result.is_none());
+
+        let result = sqlx::query_as::<_, (i64,)>("
+            SELECT COUNT(*) FROM user_connections
+            WHERE user_id = $1 AND to_do_id = $2"
+        ).bind(user_id)
+        .bind(item.id)
+        .fetch_one(&*SQLX_POSTGRES_POOL).await.unwrap();
+        assert_eq!(result.0, 0);
+
+        // Safety net if delete left anything behind.
+        let _ = sqlx::query("DELETE FROM user_connections WHERE to_do_id = $1")
+            .bind(item.id)
+            .execute(&*SQLX_POSTGRES_POOL).await;
+        let _ = sqlx::query("DELETE FROM to_do_items WHERE id = $1")
+            .bind(item.id)
+            .execute(&*SQLX_POSTGRES_POOL).await;
+    }
+
+    #[tokio::test]
+    async fn test_sqlx_postgres_delete_no_existing_item() {
+        let title = format!(
+            "test_sqlx_postgres_missing_{}",
+            uuid::Uuid::new_v4()
+        );
+        let user_id = 1;
+        let result = sqlx_postgres_delete_one(
+            title,
+            user_id
+        ).await;
+        assert!(result.is_err());
+    }
+
+}
+

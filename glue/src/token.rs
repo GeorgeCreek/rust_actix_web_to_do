@@ -9,20 +9,55 @@ use jsonwebtoken::{
     Header, 
     Validation
 };
+use std::time::{SystemTime, UNIX_EPOCH};
 
 
-/// The houses data from the token in the header.
-/// 
-/// # Fields
-/// - `unique_id` - The id of the token session should be associated with the user
-#[derive(Serialize, Deserialize)]
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+
+fn access_ttl_secs() -> u64 {
+    std::env::var("ACCESS_TOKEN_TTL_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(15 * 60)
+}
+
+
+fn refresh_ttl_secs() -> u64 {
+    std::env::var("REFRESH_TOKEN_TTL_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(7 * 24 * 60 * 60)
+}
+
+
+/// Access-token claims carried in the `token` request header.
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct HeaderToken {
     pub unique_id: String,
+    pub exp: usize,
+    #[serde(rename = "type", default = "default_access_type")]
+    pub token_type: String,
 }
+
+
+fn default_access_type() -> String {
+    "access".to_string()
+}
+
 
 impl HeaderToken {
     pub fn new(unique_id: String) -> Self {
-        Self { unique_id }
+        Self {
+            unique_id,
+            exp: (unix_now() + access_ttl_secs()) as usize,
+            token_type: "access".to_string(),
+        }
     }
 
     pub fn get_key() -> Result<String, NanoServiceError> {
@@ -36,7 +71,7 @@ impl HeaderToken {
     pub fn encode(self) -> Result<String, NanoServiceError> {
         let key_str = Self::get_key()?;
         let key = EncodingKey::from_secret(key_str.as_ref());
-        return match encode(&Header::default(), &self, &key) {
+        match encode(&Header::default(), &self, &key) {
             Ok(token) => Ok(token),
             Err(error) => Err(
                 NanoServiceError::new(
@@ -44,26 +79,106 @@ impl HeaderToken {
                     NanoServiceErrorStatus::Unauthorized
                 )
             )
-        };
+        }
     }    
     pub fn decode(token: &str) -> Result<Self, NanoServiceError> {
         let key_str = Self::get_key()?;
         let key = DecodingKey::from_secret(key_str.as_ref());
-        let mut validation = Validation::new(Algorithm::HS256);
-        validation.required_spec_claims.remove("exp");
+        let validation = Validation::new(Algorithm::HS256);
     
         match decode::<Self>(token, &key, &validation) {
-            Ok(token_data) => return Ok(token_data.claims),
-            Err(error) => return Err(
+            Ok(token_data) => {
+                if token_data.claims.token_type != "access" {
+                    return Err(NanoServiceError::new(
+                        "invalid access token type".to_string(),
+                        NanoServiceErrorStatus::Unauthorized
+                    ));
+                }
+                Ok(token_data.claims)
+            },
+            Err(error) => Err(
                 NanoServiceError::new(
                     error.to_string(),
                     NanoServiceErrorStatus::Unauthorized
                 )
             )
-        };
+        }
     }
-    
 }
+
+
+/// Refresh-token claims. Validated against the `refresh_tokens` table on use.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RefreshToken {
+    pub unique_id: String,
+    pub jti: String,
+    pub exp: usize,
+    #[serde(rename = "type")]
+    pub token_type: String,
+}
+
+
+impl RefreshToken {
+    pub fn new(unique_id: String, jti: String) -> Self {
+        Self {
+            unique_id,
+            jti,
+            exp: (unix_now() + refresh_ttl_secs()) as usize,
+            token_type: "refresh".to_string(),
+        }
+    }
+
+    pub fn encode(self) -> Result<String, NanoServiceError> {
+        let key_str = HeaderToken::get_key()?;
+        let key = EncodingKey::from_secret(key_str.as_ref());
+        match encode(&Header::default(), &self, &key) {
+            Ok(token) => Ok(token),
+            Err(error) => Err(
+                NanoServiceError::new(
+                    error.to_string(),
+                    NanoServiceErrorStatus::Unauthorized
+                )
+            )
+        }
+    }
+
+    pub fn decode(token: &str) -> Result<Self, NanoServiceError> {
+        let key_str = HeaderToken::get_key()?;
+        let key = DecodingKey::from_secret(key_str.as_ref());
+        let validation = Validation::new(Algorithm::HS256);
+
+        match decode::<Self>(token, &key, &validation) {
+            Ok(token_data) => {
+                if token_data.claims.token_type != "refresh" {
+                    return Err(NanoServiceError::new(
+                        "invalid refresh token type".to_string(),
+                        NanoServiceErrorStatus::Unauthorized
+                    ));
+                }
+                Ok(token_data.claims)
+            },
+            Err(error) => Err(
+                NanoServiceError::new(
+                    error.to_string(),
+                    NanoServiceErrorStatus::Unauthorized
+                )
+            )
+        }
+    }
+
+    pub fn expires_at(&self) -> i64 {
+        self.exp as i64
+    }
+}
+
+
+/// Access + refresh token pair returned by login/refresh endpoints.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AuthTokenPair {
+    pub access_token: String,
+    pub refresh_token: String,
+}
+
 
 // Actix Web implementation of FromRequest for HeaderToken
 #[cfg(feature = "actix")]
@@ -159,7 +274,6 @@ mod axum_impl {
         type Rejection = NanoServiceError;
 
         async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-            // Extract the header from parts
             let raw_data = match parts.headers.get("token") {
                 Some(data) => data,
                 None => {
@@ -170,7 +284,6 @@ mod axum_impl {
                 }
             };
 
-            // Convert the header value to a string
             let raw_token = match raw_data.to_str() {
                 Ok(token) => token.to_string(),
                 Err(_) => {
@@ -181,14 +294,12 @@ mod axum_impl {
                 }
             };
 
-            // Return the extracted token
             Ok(HeaderToken::decode(&raw_token)?)
         }
     }
 }
 
 
-// Re-export the specific FromRequest implementations depending on the activated feature
 #[cfg(feature = "actix")]
 pub use actix_impl::ActixFromRequest;
 
@@ -197,4 +308,3 @@ pub use rocket_impl::RocketFromRequest;
 
 #[cfg(feature = "axum")]
 pub use axum_impl::AxumFromRequestParts;
-

@@ -1,11 +1,13 @@
 import React from 'react';
 import '../Login.css';
 import { login } from '../api/login';
+import { AuthTokenPair } from '../api/tokens';
 
 
 interface LoginFormProps {
-    setToken: (token: string) => void;
+    setToken: (tokens: AuthTokenPair) => void;
 }
+
 
 export const LoginForm: React.FC<LoginFormProps> = (
     { setToken }

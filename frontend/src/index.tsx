@@ -9,6 +9,8 @@ import { UsersView } from './components/UsersView';
 import "./App.css";
 import init, { rust_generate_button_text } from '../rust-interface/pkg/rust_interface.js';
 import { LoginForm } from './components/LoginForm';
+import { AuthTokenPair, getAccessToken, storeTokens } from './api/tokens';
+import { logout as apiLogout } from './api/login';
 
 
 type AppView = "todos" | "users";
@@ -23,16 +25,16 @@ const App = () => {
         setRustGenerateButtonText
     ] = useState<((input: string) => string) | null>(null);
     const [loggedin, setLoggedin] = useState<boolean>(
-        localStorage.getItem("token") !== null
+        getAccessToken() !== null
     );
     const [view, setView] = useState<AppView>("todos");
 
-    function setToken(token: string) {
-        localStorage.setItem("token", token);
+    function setToken(tokens: AuthTokenPair) {
+        storeTokens(tokens);
         setLoggedin(true);
     }
-    function removeToken() {
-        localStorage.removeItem("token");
+    async function removeToken() {
+        await apiLogout();
         setData(null);
         setError(null);
         setLoggedin(false);
@@ -40,6 +42,10 @@ const App = () => {
     }
     function reRenderItems(response: { error?: string; data?: ToDoItems }) {
         if (response.error) {
+            if (response.error.includes("Session expired")) {
+                setLoggedin(false);
+                setData(null);
+            }
             alert(JSON.stringify(response));
             return;
         }
@@ -65,6 +71,11 @@ const App = () => {
         const fetchData = async () => {
             const response = await getAll();
             if (response.error) {
+                if (String(response.error).includes("Session expired")) {
+                    setLoggedin(false);
+                    setData(null);
+                    return;
+                }
                 setError(String(response.error));
             } else if (response.data && typeof response.data !== "string") {
                 setData(response.data);
@@ -86,7 +97,7 @@ const App = () => {
     if (view === "users") {
         return (
             <UsersView
-                onLogout={removeToken}
+                onLogout={() => { void removeToken(); }}
                 onNavigateTodos={() => setView("todos")}
             />
         );
@@ -96,7 +107,7 @@ const App = () => {
         return (
             <div>
                 <div style={{ color: 'red' }}>Error: {error}</div>
-                <button type="button" onClick={removeToken}>
+                <button type="button" onClick={() => { void removeToken(); }}>
                     Logout
                 </button>
             </div>
@@ -114,7 +125,7 @@ const App = () => {
                 <button type="button" onClick={() => setView("users")}>
                     Users
                 </button>
-                <button type="button" onClick={removeToken}>
+                <button type="button" onClick={() => { void removeToken(); }}>
                     Logout
                 </button>
             </div>

@@ -7,6 +7,8 @@ export class Url {
     update: string;
     delete: string;
     login: string;
+    refresh: string;
+    logout: string;
     usersCreate: string;
     usersGetAll: string;
     usersUpdate: string;
@@ -18,6 +20,8 @@ export class Url {
         this.update = `${this.baseUrl}api/v1/update`;
         this.delete = `${this.baseUrl}api/v1/delete`;
         this.login = `${this.baseUrl}api/v1/auth/login`;
+        this.refresh = `${this.baseUrl}api/v1/auth/refresh`;
+        this.logout = `${this.baseUrl}api/v1/auth/logout`;
         this.usersCreate = `${this.baseUrl}api/v1/users/create`;
         this.usersGetAll = `${this.baseUrl}api/v1/users/get/all`;
         this.usersUpdate = `${this.baseUrl}api/v1/users/update`;

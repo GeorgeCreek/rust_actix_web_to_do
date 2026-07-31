@@ -18,3 +18,7 @@ serde_json ={ version="1.0.114", optional = true }
 
 # for sqlx-postgres
 sqlx = { version = "0.8.3", features = ["postgres", "json", "runtime-tokio"], optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+uuid = { version = "1.8.0", features = ["v4"] }

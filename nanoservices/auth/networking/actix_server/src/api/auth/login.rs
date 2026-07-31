@@ -1,5 +1,7 @@
 use actix_web::HttpResponse;
 use auth_dal::users::transactions::get::GetByEmail;
+use auth_dal::refresh_tokens::transactions::create::SaveRefreshToken;
+use auth_dal::refresh_tokens::transactions::revoke::RevokeRefreshToken;
 use glue::errors::{NanoServiceError, NanoServiceErrorStatus};
 use crate::extract_auth::extract_credentials;
 use auth_core::api::auth::login::login as core_login;
@@ -7,14 +9,13 @@ use auth_kernel::user_session::transactions::login::LoginUserSession;
 
 
 pub async fn login<T, X>(req: actix_web::HttpRequest) 
--> Result<HttpResponse, NanoServiceError> 
+    -> Result<HttpResponse, NanoServiceError> 
 where 
-    T: GetByEmail,
+    T: GetByEmail + SaveRefreshToken + RevokeRefreshToken,
     X: LoginUserSession
 {
-
     let credentials = extract_credentials(req).await?;
-    let token = core_login::<T>(
+    let tokens = core_login::<T>(
         credentials.email.clone(), 
         credentials.password
     ).await?;
@@ -32,5 +33,5 @@ where
         user.id
     ).await?;
 
-    Ok(HttpResponse::Ok().json(token))
-}  
+    Ok(HttpResponse::Ok().json(tokens))
+}

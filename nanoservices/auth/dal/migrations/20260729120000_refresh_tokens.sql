@@ -1,0 +1,8 @@
+CREATE TABLE refresh_tokens (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    jti VARCHAR NOT NULL UNIQUE,
+    expires_at BIGINT NOT NULL,
+    revoked BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at BIGINT NOT NULL
+);

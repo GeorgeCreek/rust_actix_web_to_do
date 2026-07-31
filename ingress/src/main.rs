@@ -37,7 +37,8 @@ fn serve_frontend_asset(path: String) -> HttpResponse {
             .content_type(mime_guess::from_path(&file)
             .first_or_octet_stream().as_ref())
             .append_header(
-                ("Cache-Control", "public, max-age=604800")
+                // Avoid week-long caches of JS/CSS — stale bundles break login
+                ("Cache-Control", "no-cache, must-revalidate")
             )
             .body(content.data),
         None => HttpResponse::NotFound().body("404 Not Found")

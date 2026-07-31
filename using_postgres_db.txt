@@ -42,3 +42,26 @@ curl -X POST http://127.0.0.1:8001/api/v1/auth/logout \
 docker inspect to-do-postgres --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{end}}'
 
 set -a && source .env && set +a && cargo run
+
+
+Remote is set up and pushed:
+
+origin: https://github.com/GeorgeCreek/rust_actix_web_to_do
+Branch main tracks origin/main
+Created as private (say if you want it public instead)
+
+cd ~/rust_actix_web_to_do/ingress
+set -a && source .env && set +a
+cargo run
+
+You already have origin set. To update the remote with your local work:
+
+cd ~/rust_actix_web_to_do
+git add -A
+git status   # review what will be committed
+git commit -m "$(cat <<'EOF'
+Restore refresh-token auth and harden local test runs.
+Login/logout/refresh again write and revoke refresh_tokens; frontend stores the token pair; DAL tests no longer wipe shared todo tables.
+EOF
+)"
+git push -u origin main
